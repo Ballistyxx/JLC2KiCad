@@ -1,0 +1,4 @@
+.venv
+*.cpython-**-*.pyc
+__pycache__/
+JLC2KiCad_lib

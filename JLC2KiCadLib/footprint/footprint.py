@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 
 import requests
-from KicadModTree import Footprint, KicadFileHandler, Pad, Text, Translation
+from vendor.KicadModTree import Footprint, KicadFileHandler, Pad, Text, Translation
 
 from .footprint_handlers import handlers, mil2mm
 

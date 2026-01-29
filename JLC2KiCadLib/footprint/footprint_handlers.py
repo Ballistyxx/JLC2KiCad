@@ -3,7 +3,7 @@ import logging
 import re
 from math import acos, cos, pi, pow, radians, sin, sqrt
 
-from KicadModTree import (
+from vendor.KicadModTree import (
     Arc,
     Circle,
     Line,

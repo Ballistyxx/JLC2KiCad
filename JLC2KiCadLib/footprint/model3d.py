@@ -3,7 +3,7 @@ import os
 import re
 
 import requests
-from KicadModTree import Model
+from vendor.KicadModTree import Model
 
 wrl_header = """#VRML V2.0 utf8
 #created by JLC2KiCad_lib using the JLCPCB library
