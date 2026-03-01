@@ -1,14 +1,29 @@
 """Library path manager for JLCPCB-imported components.
 
-Creates and manages a project-specific library directory structure:
+Supports two modes:
 
-    jlcpcb_lib/
-    ├── symbols/
-    │   └── jlcpcb_parts.kicad_sym
-    ├── footprints.pretty/
-    │   └── C12345.kicad_mod
-    └── 3dmodels/
-        └── C12345.step
+**Project mode** (``is_global=False``, the classic behaviour):
+
+    <project>/
+    └── jlcpcb_lib/
+        ├── symbols/jlcpcb_parts.kicad_sym
+        ├── JLCPCB_Footprints.pretty/C12345.kicad_mod
+        └── 3dmodels/C12345.step
+
+Library URIs use ``${KIPRJMOD}`` so the library is portable within the
+project.  Entries are written to the project-level ``sym-lib-table`` /
+``fp-lib-table``.
+
+**Global mode** (``is_global=True``):
+
+    ~/.local/share/kicad/<version>/libraries/jlcpcb_parts/
+    ├── symbols/jlcpcb_parts.kicad_sym
+    ├── JLCPCB_Footprints.pretty/C12345.kicad_mod
+    └── 3dmodels/C12345.step
+
+Library URIs are absolute paths.  Entries are written to the global
+``~/.local/share/kicad/<version>/sym-lib-table`` / ``fp-lib-table`` so
+every project on the machine can use them without any extra setup.
 """
 
 from __future__ import annotations
@@ -20,22 +35,33 @@ from ..utils.logger import get_logger
 
 log = get_logger()
 
+_GLOBAL_LIB_SUBDIR = os.path.join("libraries", "jlcpcb_parts")
+
 
 class LibraryManager:
-    """Manage the per-project library directory tree.
+    """Manage the library directory tree.
 
-    All paths are resolved relative to the KiCad project root.
+    In *project* mode ``project_dir`` is the KiCad project folder and files
+    land in ``<project_dir>/jlcpcb_lib/``.
+
+    In *global* mode ``project_dir`` must be the KiCad user-data directory
+    (e.g. ``~/.local/share/kicad/9.0``) and files land in
+    ``<kicad_user_dir>/libraries/jlcpcb_parts/``.  Pass
+    ``lib_dir_name=_GLOBAL_LIB_SUBDIR`` together with ``is_global=True``
+    (done automatically by the dialog when global mode is selected).
     """
 
     def __init__(
         self,
         project_dir: str,
+        is_global: bool = False,
         lib_dir_name: str = "jlcpcb_lib",
         symbol_lib_name: str = "jlcpcb_parts",
         footprint_lib_name: str = "JLCPCB_Footprints.pretty",
         models_dir_name: str = "3dmodels",
     ) -> None:
         self.project_dir = os.path.abspath(project_dir)
+        self.is_global = is_global
         self.lib_root = os.path.join(self.project_dir, lib_dir_name)
         self.symbols_dir = os.path.join(self.lib_root, "symbols")
         self.footprints_dir = os.path.join(self.lib_root, footprint_lib_name)
@@ -69,21 +95,29 @@ class LibraryManager:
         return self._footprint_lib_name.replace(".pretty", "")
 
     def model_ref(self, name: str, ext: str = "step") -> str:
-        """Model reference path using ``${KIPRJMOD}`` variable.
+        """Model reference path for embedding in a .kicad_mod file.
 
-        Returns e.g.
-        ``"${KIPRJMOD}/jlcpcb_lib/3dmodels/C12345.step"``
+        In project mode returns ``"${KIPRJMOD}/jlcpcb_lib/3dmodels/C12345.step"``.
+        In global mode returns the absolute POSIX path so the model is found
+        regardless of which project is open.
         """
-        rel = os.path.relpath(self.model_path(name, ext), self.project_dir)
+        abs_path = self.model_path(name, ext)
+        if self.is_global:
+            return Path(abs_path).as_posix()
+        rel = os.path.relpath(abs_path, self.project_dir)
         return "${KIPRJMOD}/" + rel.replace("\\", "/")
 
     def symbol_lib_uri(self) -> str:
-        """URI for sym-lib-table using ``${KIPRJMOD}``."""
+        """URI written into sym-lib-table."""
+        if self.is_global:
+            return Path(self.symbol_lib_path).as_posix()
         rel = os.path.relpath(self.symbol_lib_path, self.project_dir)
         return "${KIPRJMOD}/" + rel.replace("\\", "/")
 
     def footprint_lib_uri(self) -> str:
-        """URI for fp-lib-table using ``${KIPRJMOD}``."""
+        """URI written into fp-lib-table."""
+        if self.is_global:
+            return Path(self.footprints_dir).as_posix()
         rel = os.path.relpath(self.footprints_dir, self.project_dir)
         return "${KIPRJMOD}/" + rel.replace("\\", "/")
 
@@ -100,6 +134,31 @@ class LibraryManager:
     def is_writable(self) -> bool:
         """Check that the project directory is writable."""
         return os.access(self.project_dir, os.W_OK)
+
+    @staticmethod
+    def detect_kicad_user_dir() -> str | None:
+        """Return the versioned KiCad user-data directory.
+
+        Looks under ``$XDG_DATA_HOME/kicad/`` (typically
+        ``~/.local/share/kicad/``) and returns the highest-version
+        subdirectory found, e.g. ``~/.local/share/kicad/9.0``.
+        """
+        kicad_base = os.path.join(
+            os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")),
+            "kicad",
+        )
+        if not os.path.isdir(kicad_base):
+            return None
+        versions = sorted(
+            (
+                d for d in os.listdir(kicad_base)
+                if os.path.isdir(os.path.join(kicad_base, d))
+            ),
+            key=lambda v: [int(x) if x.isdigit() else x for x in v.split(".")],
+        )
+        if not versions:
+            return None
+        return os.path.join(kicad_base, versions[-1])
 
     @staticmethod
     def detect_project_dir() -> str | None:

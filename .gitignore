@@ -3,3 +3,5 @@
 __pycache__/
 JLC2KiCad_lib
 jlcpcb_importer/jlcpcb_importer
+plan.md
+*.egg-info/

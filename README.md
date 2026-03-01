@@ -1,128 +1,106 @@
-# JLC2KiCadLib
+# JLCPCB Component Importer for KiCad
 
-<p style="text-align: center;">
+A KiCad plugin that imports components from the JLCPCB/LCSC parts library directly into your project, generating KiCad-native symbols, footprints, and 3D models.
 
-[![PyPI version](https://badge.fury.io/py/JLC2KiCadLib.svg)](https://badge.fury.io/py/JLC2KiCadLib)
-![Python versions](https://img.shields.io/pypi/pyversions/JLC2KiCadLib.svg)
-[![Downloads](https://pepy.tech/badge/jlc2kicadlib)](https://pepy.tech/project/jlc2kicadlib)
-[![Code style: ruff](https://img.shields.io/badge/Linter-Ruff-D7FF64?style=flat-square&logo=ruff)](https://github.com/astral-sh/ruff)
-[![Code style: ruff](https://img.shields.io/badge/Formatter-Ruff-D7FF64?style=flat-square&logo=ruff)](https://github.com/astral-sh/ruff)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![Plugin UI](images/Import_UI_1.png)
 
-</p>
+## Features
 
-JLC2KiCadLib is a python script that generate a component library (symbol, footprint and 3D model) for KiCad from the JLCPCB/easyEDA library.
-This script requires **Python 3.8** or higher.
+- **One-click import** — Enter an LCSC part number (e.g. `C25804`) and the plugin fetches component data, generates the symbol and footprint, downloads the 3D STEP model, and registers everything in your project's library tables.
+- **Symbol generation** — Converts EasyEDA symbol data to `.kicad_sym` format with correct pin mapping, graphics, and metadata.
+- **Footprint generation** — Converts EasyEDA footprint data to `.kicad_mod` format, including pads, copper traces, silkscreen, courtyards, and fabrication layers.
+- **3D model support** — Downloads STEP models from JLCPCB's CDN and attaches them to footprints with correct position and rotation.
+- **Local caching** — SQLite-backed cache avoids redundant API calls for previously fetched components.
+- **Library table management** — Automatically adds `sym-lib-table` and `fp-lib-table` entries to your KiCad project so imported parts are immediately available.
 
-## Example 
+## Requirements
 
-
-
-easyEDA origin | KiCad result
----- | ----
-![JLCSymbol](https://raw.githubusercontent.com/TousstNicolas/JLC2KiCad_lib/master/images/JLC_Symbol_1.png) | ![KiCadSymbol](https://raw.githubusercontent.com/TousstNicolas/JLC2KiCad_lib/master/images/KiCad_Symbol_1.png)
-![JLCFootprint](https://raw.githubusercontent.com/TousstNicolas/JLC2KiCad_lib/master/images/JLC_Footprint_1.png) | ![KiCadFootprint](https://raw.githubusercontent.com/TousstNicolas/JLC2KiCad_lib/master/images/KiCad_Footprint_1.png)
-![JLC3Dmodel](https://raw.githubusercontent.com/TousstNicolas/JLC2KiCad_lib/master/images/JLC_3Dmodel.png) | ![KiCad3Dmodel](https://raw.githubusercontent.com/TousstNicolas/JLC2KiCad_lib/master/images/KiCad_3Dmodel.png)
+- **KiCad 8.0+** (tested on KiCad 9.0)
+- **Python 3.10+** (uses KiCad's bundled Python; tested on 3.14)
+- **`requests`** library (usually available in KiCad's Python environment)
 
 ## Installation
 
-Install using pip: 
+Clone this repository and run the install script:
 
-```
-pip install JLC2KiCadLib
-```
-
-Install from source:
-
-```
-git clone https://github.com/TousstNicolas/JLC2KiCad_lib.git
-cd JLC2KiCad_lib 
-pip install . 
+```bash
+git clone https://github.com/Ballistyxx/JLC2KiCad.git
+cd JLC2KiCad
+./install.sh
 ```
 
-## Usage 
+The script creates symlinks from KiCad's scripting plugins directory to this repository. It auto-detects your KiCad version, or you can specify one explicitly:
 
-```
-usage: JLC2KiCadLib [-h] [-dir OUTPUT_DIR] [--no_footprint] [--no_symbol] [-symbol_lib SYMBOL_LIB] [-footprint_lib FOOTPRINT_LIB]
-                    [-models [{STEP,WRL} ...]] [--skip_existing] [-model_base_variable MODEL_BASE_VARIABLE]
-                    [-logging_level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--log_file] [--version]
-                    JLCPCB_part_# [JLCPCB_part_# ...]
-
-take a JLCPCB part # and create the according component's kicad's library
-
-positional arguments:
-  JLCPCB_part_#         list of JLCPCB part # from the components you want to create
-
-options:
-  -h, --help            show this help message and exit
-  -dir OUTPUT_DIR       base directory for output library files
-  --no_footprint        use --no_footprint if you do not want to create the footprint
-  --no_symbol           use --no_symbol if you do not want to create the symbol
-  -symbol_lib SYMBOL_LIB
-                        set symbol library name, default is "default_lib"
-  -symbol_lib_dir SYMBOL_LIB_DIR
-                        Set symbol library path, default is "symbol" (relative to OUTPUT_DIR)
-  -footprint_lib FOOTPRINT_LIB
-                        set footprint library name, default is "footprint"
-  -models [{STEP,WRL} ...]
-                        Select the 3D model you want to use. Default is STEP. 
-                        If both are selected, only the STEP model will be added to the footprint (the WRL model will still be generated alongside the STEP model). 
-                        If you do not want any model to be generated, use the --models without arguments
-  -model_dir MODEL_DIR  Set directory for storing 3d models, default is "packages3d" (relative to FOOTPRINT_LIB)
-  --skip_existing       use --skip_existing if you want do not want to replace already existing footprints and symbols
-  -model_base_variable MODEL_BASE_VARIABLE
-                        use -model_base_variable if you want to specify the base path of the 3D model using a path variable
-  -logging_level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
-                        set logging level. If DEBUG is used, the debug logs are only written in the log file if the option --log_file is set
-  --log_file            use --log_file if you want logs to be written in a file
-  --version             Print versin number and exit
-
-exemple use : 
-        JLC2KiCadLib C1337258 C24112 -dir My_lib -symbol_lib My_Symbol_lib --no_footprint
+```bash
+./install.sh 9.0
 ```
 
-The only required arguments are the JLCPCP_part number (e.g. Cxxxxx)
+### Manual installation
 
-Example usage : 
-```
-JLC2KiCadLib C1337258 C24112 -dir My_lib                       \
-                             -model_dir My_model_dir           \
-                             -footprint_lib My_footprint_lib   \
-                             -symbol_lib_dir My_symbol_lib_dir \
-                             -symbol_lib My_symbol_lib
-```
+If you prefer, create the symlinks yourself:
 
-This example will create the symbol, footprint and 3D model for the two components specified and will output the symbol in the `./My_lib/symbol/My_symbol_lib.lib` file, the footprint and 3D model will be created in the `./My_lib/Footprint`. This will result in the following tree to be created : 
-
-```
-My_lib
-├── My_footprint_lib
-│   ├── My_model_dir
-│   │   ├── QFN-24_L4.0-W4.0-P0.50-BL-EP2.7.step
-│   │   └── VQFN-48_L7.0-W7.0-P0.50-BL-EP5.5.step
-│   ├── QFN-24_L4.0-W4.0-P0.50-BL-EP2.7.kicad_mod
-│   └── VQFN-48_L7.0-W7.0-P0.50-BL-EP5.5.kicad_mod
-└── My_symbol_lib_dir
-    └── My_symbol_lib.kicad_sym
+```bash
+PLUGINS_DIR="$HOME/.local/share/kicad/9.0/scripting/plugins"
+mkdir -p "$PLUGINS_DIR"
+ln -s "$(pwd)/jlcpcb_importer" "$PLUGINS_DIR/jlcpcb_importer"
+ln -s "$(pwd)/vendor"          "$PLUGINS_DIR/vendor"
 ```
 
-Most of those arguments are optional. The only required argument is the JLCPCB part #.
+Restart KiCad after installing.
 
-The JLCPCB part # is found in the part info section of every component in the JLCPCB part library. 
+### Uninstall
 
-By default, the library folder will be created in the execution directory. You can specify an absolute path with the -dir option. 
+```bash
+rm ~/.local/share/kicad/9.0/scripting/plugins/jlcpcb_importer
+rm ~/.local/share/kicad/9.0/scripting/plugins/vendor
+```
 
-## Dependencies 
+## Usage
 
-JLC2KiCadLib relies on the [KicadModTree](https://gitlab.com/kicad/libraries/kicad-footprint-generator) framework to generate the footprints. 
+1. Open KiCad and launch the **PCB Editor** (pcbnew).
+2. Find **JLCPCB Component Importer** in the toolbar or under **Tools > External Plugins**.
+3. Enter an LCSC part number (e.g. `C25804`) and click **Fetch**.
+4. Review the component details in the preview panel.
+5. Check or uncheck **Download 3D model (STEP)** as desired.
+6. Click **Import**.
 
-## Notes
+The symbol, footprint, and 3D model are written to a `jlcpcb_lib/` directory inside your KiCad project, and the library tables are updated automatically. You can immediately place the component from the `jlcpcb_parts` symbol library.
 
-* Even so I tested the script on a lot of components, be careful and always check the output footprint and symbol.
-* I consider this project completed. I will continue to maintain it if a bug report is filed, but I will not develop new functionality in the near future. If you feel that an important feature is missing, please open an issue to discuss it, then you can fork this project with a new branch before submitting a PR. 
+## Conversion Examples
 
-## License 
+These examples show the EasyEDA-to-KiCad conversion quality (from the original JLC2KiCadLib project):
 
-Copyright © 2021 TousstNicolas 
+EasyEDA source | KiCad result
+---- | ----
+![JLC Symbol](images/JLC_Symbol_1.png) | ![KiCad Symbol](images/KiCad_Symbol_1.png)
+![JLC Footprint](images/JLC_Footprint_1.png) | ![KiCad Footprint](images/KiCad_Footprint_1.png)
+![JLC 3D Model](images/JLC_3Dmodel.png) | ![KiCad 3D Model](images/KiCad_3Dmodel.png)
 
-The code is released under the MIT license
+## Project Structure
+
+```
+JLC2KiCad/
+├── jlcpcb_importer/          # The KiCad plugin
+│   ├── plugin.py             # ActionPlugin entry point
+│   ├── api/                  # JLCPCB/EasyEDA API client & cache
+│   ├── generators/           # Symbol, footprint, and 3D model generators
+│   ├── library/              # Library path management & table editing
+│   ├── ui/                   # wxPython import dialog
+│   └── utils/                # Config, logging
+├── vendor/                   # Vendored KicadModTree (footprint generation)
+├── JLC2KiCadLib/             # Original CLI tool (preserved for reference)
+├── install.sh                # Plugin installer
+└── images/                   # Screenshots and examples
+```
+
+## Attribution
+
+This project is a fork of [JLC2KiCad_lib](https://github.com/TousstNicolas/JLC2KiCad_lib) by **TousstNicolas**, which provides a command-line tool for generating KiCad libraries from JLCPCB/EasyEDA components. The symbol and footprint conversion logic in this plugin is derived from that work.
+
+The footprint generator uses a vendored copy of [KicadModTree](https://gitlab.com/kicad/libraries/kicad-footprint-generator) with modifications for Python 3.13+ compatibility (removal of the `lib2to3`-dependent `future` package).
+
+## License
+
+MIT License -- see [LICENSE](LICENSE) for details.
+
+Original copyright (c) 2021 TousstNicolas.

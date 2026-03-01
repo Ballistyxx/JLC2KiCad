@@ -24,7 +24,7 @@ from ..generators.model_3d_generator import (
     parse_svgnode_attrs,
 )
 from ..generators.symbol_generator import generate_symbol
-from ..library.manager import LibraryManager
+from ..library.manager import LibraryManager, _GLOBAL_LIB_SUBDIR
 from ..library.table_editor import ensure_footprint_table, ensure_symbol_table
 from ..utils.config import PluginConfig, load_config
 from ..utils.logger import get_logger
@@ -87,6 +87,19 @@ class ImportDialog(wx.Dialog):
         # -- Options --
         opts_box = wx.StaticBox(panel, label="Options")
         opts_sizer = wx.StaticBoxSizer(opts_box, wx.VERTICAL)
+
+        self._chk_global = wx.CheckBox(
+            panel, label="Global library — shared across all projects"
+        )
+        self._chk_global.SetValue(True)
+        self._chk_global.SetToolTip(
+            "When checked, components are saved to "
+            "~/.local/share/kicad/<version>/libraries/jlcpcb_parts/ "
+            "and registered in the global library tables so every project "
+            "can use them without any extra setup.\n\n"
+            "Uncheck to save inside the current KiCad project folder instead."
+        )
+        opts_sizer.Add(self._chk_global, 0, wx.ALL, 4)
 
         self._chk_3d = wx.CheckBox(panel, label="Download 3D model (STEP)")
         self._chk_3d.SetValue(self._config.download_3d_models != "never")
@@ -167,15 +180,28 @@ class ImportDialog(wx.Dialog):
         if not self._part_data:
             return
 
-        # Detect project directory
-        project_dir = self._detect_project_dir()
-        if not project_dir:
-            wx.MessageBox(
-                "Could not detect KiCad project directory.\n"
-                "Please open a project in KiCad first.",
-                "Error", wx.OK | wx.ICON_ERROR, self,
-            )
-            return
+        use_global = self._chk_global.GetValue()
+
+        if use_global:
+            kicad_user_dir = LibraryManager.detect_kicad_user_dir()
+            if not kicad_user_dir:
+                wx.MessageBox(
+                    "Could not find the KiCad user data directory.\n"
+                    "Is KiCad installed?",
+                    "Error", wx.OK | wx.ICON_ERROR, self,
+                )
+                return
+            root_dir = kicad_user_dir
+        else:
+            root_dir = self._detect_project_dir()
+            if not root_dir:
+                wx.MessageBox(
+                    "Could not detect KiCad project directory.\n"
+                    "Please open a project in KiCad first, or enable "
+                    "'Global library' to save without a project.",
+                    "Error", wx.OK | wx.ICON_ERROR, self,
+                )
+                return
 
         self._set_status(f"Importing {self._part_data.lcsc_number} ...")
         self._import_btn.Disable()
@@ -183,15 +209,34 @@ class ImportDialog(wx.Dialog):
 
         thread = threading.Thread(
             target=self._run_import,
-            args=(self._part_data, project_dir),
+            args=(self._part_data, root_dir, use_global),
             daemon=True,
         )
         thread.start()
 
-    def _run_import(self, part: PartData, project_dir: str) -> None:
-        """Background thread: run the full import pipeline."""
+    def _run_import(self, part: PartData, root_dir: str, is_global: bool) -> None:
+        """Background thread: run the full import pipeline.
+
+        Args:
+            part: The part to import.
+            root_dir: In global mode, the KiCad user-data directory
+                (``~/.local/share/kicad/<version>``).  In project mode,
+                the KiCad project directory.
+            is_global: Whether to write to the global shared library.
+        """
         try:
-            lib_mgr = LibraryManager(project_dir)
+            if is_global:
+                lib_mgr = LibraryManager(
+                    root_dir,
+                    is_global=True,
+                    lib_dir_name=_GLOBAL_LIB_SUBDIR,
+                )
+                # Library-table files live directly in the KiCad user dir
+                table_dir = root_dir
+            else:
+                lib_mgr = LibraryManager(root_dir)
+                table_dir = root_dir
+
             lib_mgr.ensure_directories()
 
             lcsc = part.lcsc_number
@@ -262,30 +307,38 @@ class ImportDialog(wx.Dialog):
             # -- Library tables --
             wx.CallAfter(self._set_status, "Updating library tables ...")
             ensure_symbol_table(
-                project_dir,
+                table_dir,
                 lib_mgr.symbol_lib_name,
                 lib_mgr.symbol_lib_uri(),
             )
             ensure_footprint_table(
-                project_dir,
+                table_dir,
                 lib_mgr.kicad_footprint_ref,
                 lib_mgr.footprint_lib_uri(),
             )
 
-            wx.CallAfter(self._on_import_ok, lcsc)
+            wx.CallAfter(self._on_import_ok, lcsc, is_global)
 
         except Exception as exc:
             log.exception("Import failed")
             wx.CallAfter(self._on_import_error, str(exc))
 
-    def _on_import_ok(self, lcsc: str) -> None:
+    def _on_import_ok(self, lcsc: str, is_global: bool = False) -> None:
         self._set_status(f"Successfully imported {lcsc}!")
         self._fetch_btn.Enable()
         self._import_btn.Enable()
+        if is_global:
+            detail = (
+                "The symbol and footprint are in the global 'jlcpcb_parts' "
+                "library, available to all your KiCad projects."
+            )
+        else:
+            detail = (
+                "The symbol and footprint libraries have been added to your project.\n"
+                "You can now place the symbol from the 'jlcpcb_parts' library."
+            )
         wx.MessageBox(
-            f"Component {lcsc} imported successfully.\n\n"
-            "The symbol and footprint libraries have been added to your project.\n"
-            "You can now place the symbol from the 'jlcpcb_parts' library.",
+            f"Component {lcsc} imported successfully.\n\n{detail}",
             "Import Complete",
             wx.OK | wx.ICON_INFORMATION,
             self,
