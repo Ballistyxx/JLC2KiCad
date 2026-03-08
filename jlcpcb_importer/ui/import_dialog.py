@@ -230,6 +230,7 @@ class ImportDialog(wx.Dialog):
                     root_dir,
                     is_global=True,
                     lib_dir_name=_GLOBAL_LIB_SUBDIR,
+                    footprint_lib_name="JLCPCB_GLOBAL_Footprints.pretty",
                 )
                 # Library-table files live directly in the KiCad user dir
                 table_dir = root_dir
